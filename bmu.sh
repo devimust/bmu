@@ -6,7 +6,7 @@
 # exit script when command fails
 #set -e
 # exit when trying to use undeclared vars
-set -u
+#set -u
 # exit status of last command returning non-zero exit code
 set -o pipefail
 
