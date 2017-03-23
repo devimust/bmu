@@ -4,9 +4,9 @@
 # trace what gets executed (debugging purposes)
 #set -x
 # exit script when command fails
-set -e
+#set -e
 # exit when trying to use undeclared vars
-#set -u
+set -u
 # exit status of last command returning non-zero exit code
 set -o pipefail
 
@@ -29,6 +29,7 @@ PASSWORD=""
 SUBFOLDERS=false
 VERBOSE=false
 ARCHIVE_TYPE="zip"
+TRIAL_RUN=false
 
 ##################################
 # Local functions
@@ -54,13 +55,16 @@ Examples:
 
  Main operation mode:
 
-  -a, --attach               attach prefix to the archived files
-  -f, --force                skip process to check for changes and re-create archive
-  -h, --help                 show this help menu
-  -p, --password             specify password to protect archive(s)
-  -s, --subfolders           only archive subfolders inside given directory
-  -v, --verbose              show more verbose output (debugging)
-  -t, --type                 archive type to use (zip or tar)
+  -a, --attach              attach prefix to the archived files
+  -c, --check               check what will be processed in a test run if omitted
+  -f, --force               skip process to check for changes and re-create archive
+  -h, --help                show this help menu
+  -p, --password            specify password to protect archive(s)
+  -s, --subfolders          only archive subfolders inside given directory
+  -d, --debug               show more verbose output (debugging)
+  -t, --type                archive type to use (zip or tar)
+
+  long options not currently supported
 EOF
 }
 
@@ -108,9 +112,6 @@ calc_hash(){
 
 calc_dir_checksum(){
     local DIR=$1
-
-# find /home/rudi/dev-local/testfiles/source/firstserved -type f -exec sha256sum "{}" + | sort | sha256sum
-# tar -cf - find /home/rudi/dev-local/testfiles/source/firstserved | sha256sum
     local findBin=$(command -v find)
     local shaBin=$(command -v sha256sum)
     local cmdOutput=$(${findBin} "${DIR}" -type f -exec ${shaBin} "{}" + | sort | ${shaBin})
@@ -124,8 +125,10 @@ archive_folder(){
     local SOURCE_DIR=$1
     local DESTINATION_DIR=$2
     local ARCHIVE_TYPE=$3
-    local FORCE=$4
-    local PASSWORD=$5
+    local ARCHIVE_PREFIX=$4
+    local FORCE=$5
+    local PASSWORD=$6
+    local TRIAL_RUN=$7
 
     local CAN_ARCHIVE=false
     local SOURCE_CHECKSUM=""
@@ -133,7 +136,7 @@ archive_folder(){
     local START_TIME=`date +%s`
     local OUTPUT_MESSAGE=""
     local ARCHIVE_FILE_TYPE=$(archive_file_type "${ARCHIVE_TYPE}")
-    local DESTINATION_ARCHIVE_FILE="${DESTINATION_DIR}/${ARCHIVE_PREFIX}$(basename $SOURCE_DIR).${ARCHIVE_TYPE}"
+    local DESTINATION_ARCHIVE_FILE="${DESTINATION_DIR}/${ARCHIVE_PREFIX}$(basename "$SOURCE_DIR").${ARCHIVE_TYPE}"
     local DESTINATION_CHECKSUM_FILE="${DESTINATION_ARCHIVE_FILE}.crc"
 
     debug_message "trying to archive ${SOURCE_DIR} to ${DESTINATION_DIR}"
@@ -144,7 +147,7 @@ archive_folder(){
         CAN_ARCHIVE=true
     else
         if [ "${FORCE}" = false ]; then
-            DESTINATION_HASH=$(cat ${DESTINATION_CHECKSUM_FILE})
+            DESTINATION_HASH=$(cat "${DESTINATION_CHECKSUM_FILE}")
             # echo $DESTINATION_HASH
 
             debug_message "calculating source folder checksum to compare with destination checksum"
@@ -177,43 +180,51 @@ archive_folder(){
     #     debug_message "forcing archive"
 
     if [ -z "${SOURCE_CHECKSUM}" ]; then
-        debug_message "calculating source folder checksum as this is a new archive"
+        debug_message "calculating source folder checksum as this is a new archive or was forced"
         SOURCE_CHECKSUM=$(calc_dir_checksum "${SOURCE_DIR}")
         SOURCE_HASH=$(calc_hash "${SOURCE_CHECKSUM}")
     fi
 
-    if [ "${CAN_ARCHIVE}" = true ]; then
-        case "$ARCHIVE_FILE_TYPE" in
-            zip)
-                debug_message "zip archive started (${DESTINATION_ARCHIVE_FILE})"
-                zipBin=$(command -v zip)
-
-                cmd="${zipBin} --recurse-paths --paths -9"
-                if [ ! -z ${PASSWORD} ]; then
-                    cmd="${cmd} --password "${PASSWORD}""
-                fi
-                cmd="${cmd} "${DESTINATION_ARCHIVE_FILE}" "${SOURCE_DIR}""
-                cmdOutput=$($cmd)
-
-                # store hash value int checksum file
-                echo "${SOURCE_HASH}" > "${DESTINATION_CHECKSUM_FILE}"
-
-                END_TIME=`date +%s`
-                TOTAL_TIME="$(($END_TIME-$START_TIME))"
-                NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
-
-                debug_message "zip archive (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
-                OUTPUT_MESSAGE="${OUTPUT_MESSAGE}... (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
-            ;;
-            *) ;;
-        esac
-    else
+    if [ "${TRIAL_RUN}" = true ]; then
         END_TIME=`date +%s`
         TOTAL_TIME="$(($END_TIME-$START_TIME))"
         NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
 
-        debug_message "skipping ${SOURCE_DIR} (finished in ${NICE_TIME})"
-        OUTPUT_MESSAGE="${OUTPUT_MESSAGE}... (finished in ${NICE_TIME})"
+        debug_message "trial run, nothing written (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
+        OUTPUT_MESSAGE="${OUTPUT_MESSAGE}... trial run, nothing written (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
+    else
+        if [ "${CAN_ARCHIVE}" = true ]; then
+            case "$ARCHIVE_FILE_TYPE" in
+                zip)
+                    debug_message "zip archive started (${DESTINATION_ARCHIVE_FILE})"
+                    zipBin=$(command -v zip)
+
+                    cmd="${zipBin} --recurse-paths --paths -9"
+                    if [ ! -z ${PASSWORD} ]; then
+                        cmd="${cmd} --password "${PASSWORD}""
+                    fi
+                    cmdOutput=$(${cmd} "${DESTINATION_ARCHIVE_FILE}" "${SOURCE_DIR}")
+
+                    # store hash value in checksum file
+                    echo "${SOURCE_HASH}" > "${DESTINATION_CHECKSUM_FILE}"
+
+                    END_TIME=`date +%s`
+                    TOTAL_TIME="$(($END_TIME-$START_TIME))"
+                    NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
+
+                    debug_message "zip archive (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
+                    OUTPUT_MESSAGE="${OUTPUT_MESSAGE}... (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
+                    ;;
+                *) ;;
+            esac
+        else
+            END_TIME=`date +%s`
+            TOTAL_TIME="$(($END_TIME-$START_TIME))"
+            NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
+
+            debug_message "skipping ${SOURCE_DIR} (finished in ${NICE_TIME})"
+            OUTPUT_MESSAGE="${OUTPUT_MESSAGE}... (finished in ${NICE_TIME})"
+        fi
     fi
 
     output_message "${OUTPUT_MESSAGE}"
@@ -224,23 +235,29 @@ archive_folder(){
 ##################################
 
 # @link http://stackoverflow.com/questions/402377/using-getopts-in-bash-shell-script-to-get-long-and-short-command-line-options/7680682
-while getopts a:fh:p:svt:-: arg; do
+while getopts a:cdfhp:st:-: arg; do
   case $arg in
     a ) ARCHIVE_PREFIX="$OPTARG" ;;
+    c ) TRIAL_RUN=true ;;
+    d ) VERBOSE=true ;;
     f ) FORCE=true ;;
     h ) show_help && exit 0 ;;
     p ) PASSWORD="$OPTARG" ;;
     s ) SUBFOLDERS=true ;;
-    v ) VERBOSE=true ;;
     t ) ARCHIVE_TYPE="$OPTARG" ;;
     # - )  LONG_OPTARG="${OPTARG#*=}"
     #      case $OPTARG in
-    #        alpha    )  ARG_A=true ;;
-    #        bravo=?* )  ARG_B="$LONG_OPTARG" ;;
-    #        bravo*   )  echo "No arg for --$OPTARG option" >&2; exit 2 ;;
-    #        charlie  )  ARG_C=true ;;
-    #        alpha* | charlie* )
-    #                    echo "No arg allowed for --$OPTARG option" >&2; exit 2 ;;
+    #        attach=?* )  ARCHIVE_PREFIX="$LONG_OPTARG" ;;
+    #        attach*   )  echo "No arg for --$OPTARG option" >&2; exit 2 ;;
+    #        check  )  TRIAL_RUN=true ;;
+    #        force  )  FORCE=true ;;
+    #        help  )  show_help && exit 0 ;;
+    #        password=?* )  PASSWORD="$LONG_OPTARG" ;;
+    #        password*   )  echo "No arg for --$OPTARG option" >&2; exit 2 ;;
+    #        subfolders  )  SUBFOLDERS=true ;;
+    #        verbose  )  VERBOSE=true ;;
+    #        type=?* )  ARCHIVE_TYPE="$LONG_OPTARG" ;;
+    #        type*   )  echo "No arg for --$OPTARG option" >&2; exit 2 ;;
     #        '' )        break ;; # "--" terminates argument processing
     #        * )         echo "Illegal option --$OPTARG" >&2; exit 2 ;;
     #      esac ;;
@@ -248,6 +265,12 @@ while getopts a:fh:p:svt:-: arg; do
   esac
 done
 shift $((OPTIND-1)) # remove parsed options and args from $@ list
+
+if [ "$#" -eq 0 ]; then
+    show_help
+    exit 0
+fi
+
 SOURCE_DIR=$1
 DESTINATION_DIR=$2
 
@@ -266,7 +289,35 @@ debug_message "VAR Force: $FORCE"
 #debug_message "VAR Pass: $PASSWORD"
 debug_message "VAR Subfolders: $SUBFOLDERS"
 debug_message "VAR Type: $ARCHIVE_TYPE"
+debug_message "VAR Trial Run: $TRIAL_RUN"
 debug_message "VAR Source: $SOURCE_DIR"
 debug_message "VAR Destination: $DESTINATION_DIR"
 
-archive_folder "${SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${FORCE}" "${PASSWORD}"
+if [ "${SUBFOLDERS}" = true ]; then
+    debug_message "checking subfolders on ${SOURCE_DIR}"
+
+    PREFIX=$(basename "${SOURCE_DIR}")
+
+    # findBin=$(command -v find)
+    # cmd="${findBin} "${SOURCE_DIR}" -maxdepth 1 -mindepth 1 -type d"
+    # cmdOutput=$(${findBin} "${DIR}" -maxdepth 1 -mindepth 1 -type d -exec basename {} \;)
+    # echo $cmdOutput
+    for dir in ${SOURCE_DIR}/*
+    do
+        if [[ -d "$dir" ]]; then
+            dir=${dir%*/}    # strip trailing slash
+            dir=${dir##*/}  # strip path and leading slash
+            TMP_SOURCE_DIR="${SOURCE_DIR}/${dir}"
+
+            archive_folder "${TMP_SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${PREFIX}-${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${TRIAL_RUN}"
+        fi;
+    done
+
+    # $($cmd) | while read d; do
+    #     echo "$d"
+    # done
+else
+
+    archive_folder "${SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${TRIAL_RUN}"
+
+fi
