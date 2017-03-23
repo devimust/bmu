@@ -48,21 +48,21 @@ Usage: bmu [OPTION...] [SOURCE DIRECTORY] [DESTINATION DIRECTORY]...
 directory.
 
 Examples:
-  bmu -p /src_folder /dst_folder                    # Create protected archive only if source
+  bmu -p somepassword1 /src_folder /dst_folder      # Create protected archive only if source
                                                     # files/folders were modified.
   bmu -a my-prefix -vsf /src_folder /dst_folder     # Force new archives with prefix, verbosity
                                                     # and only include sub-folders.
 
  Main operation mode:
 
-  -a, --attach              attach prefix to the archived files
-  -c, --check               check what will be processed in a test run if omitted
-  -f, --force               skip process to check for changes and re-create archive
-  -h, --help                show this help menu
-  -p, --password            specify password to protect archive(s)
-  -s, --subfolders          only archive subfolders inside given directory
-  -d, --debug               show more verbose output (debugging)
-  -t, --type                archive type to use (zip or tar)
+  -a            attach prefix to the archived files
+  -c            check what will be processed in a test run if omitted
+  -f            force process and bypass checking for changes
+  -h            show this help menu
+  -p            specify password to protect archive(s)
+  -s            only archive subfolders inside given directory
+  -d            show more verbose output (debugging)
+  -t            archive type to use (zip or tar)
 
   long options not currently supported
 EOF
@@ -77,7 +77,6 @@ debug_message(){
 
 output_message(){
     if [ ${VERBOSE} = false ]; then
-        # TIME=$(date +"%H:%M:%S")
         echo "$1"
     fi
 }
@@ -96,10 +95,12 @@ calc_nice_duration(){
     local H=$((T/60/60%24))
     local M=$((T/60%60))
     local S=$((T%60))
+
     (( $D > 0 )) && printf '%d days ' $D
     (( $H > 0 )) && printf '%d hours ' $H
     (( $M > 0 )) && printf '%d minutes ' $M
     (( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
+
     printf '%d seconds\n' $S
 }
 
@@ -107,6 +108,7 @@ calc_hash(){
     local STR=$1
     local shaBin=$(command -v sha256sum)
     local cmdOutput=$(echo "${STR}" | ${shaBin})
+
     echo $cmdOutput
 }
 
@@ -115,10 +117,8 @@ calc_dir_checksum(){
     local findBin=$(command -v find)
     local shaBin=$(command -v sha256sum)
     local cmdOutput=$(${findBin} "${DIR}" -type f -exec ${shaBin} "{}" + | sort | ${shaBin})
+
     echo $cmdOutput
-    # duBin=$(command -v du)
-    # cmdOutput=$(${duBin} --summarize --bytes "${DIR}")
-    # echo $cmdOutput
 }
 
 archive_folder(){
@@ -148,12 +148,10 @@ archive_folder(){
     else
         if [ "${FORCE}" = false ]; then
             DESTINATION_HASH=$(cat "${DESTINATION_CHECKSUM_FILE}")
-            # echo $DESTINATION_HASH
 
             debug_message "calculating source folder checksum to compare with destination checksum"
             SOURCE_CHECKSUM=$(calc_dir_checksum "${SOURCE_DIR}")
             SOURCE_HASH=$(calc_hash "${SOURCE_CHECKSUM}")
-            # echo $SOURCE_HASH
 
             if [ "${DESTINATION_HASH}" != "${SOURCE_HASH}" ]; then
                 debug_message "changes detected"
@@ -245,22 +243,6 @@ while getopts a:cdfhp:st:-: arg; do
     p ) PASSWORD="$OPTARG" ;;
     s ) SUBFOLDERS=true ;;
     t ) ARCHIVE_TYPE="$OPTARG" ;;
-    # - )  LONG_OPTARG="${OPTARG#*=}"
-    #      case $OPTARG in
-    #        attach=?* )  ARCHIVE_PREFIX="$LONG_OPTARG" ;;
-    #        attach*   )  echo "No arg for --$OPTARG option" >&2; exit 2 ;;
-    #        check  )  TRIAL_RUN=true ;;
-    #        force  )  FORCE=true ;;
-    #        help  )  show_help && exit 0 ;;
-    #        password=?* )  PASSWORD="$LONG_OPTARG" ;;
-    #        password*   )  echo "No arg for --$OPTARG option" >&2; exit 2 ;;
-    #        subfolders  )  SUBFOLDERS=true ;;
-    #        verbose  )  VERBOSE=true ;;
-    #        type=?* )  ARCHIVE_TYPE="$LONG_OPTARG" ;;
-    #        type*   )  echo "No arg for --$OPTARG option" >&2; exit 2 ;;
-    #        '' )        break ;; # "--" terminates argument processing
-    #        * )         echo "Illegal option --$OPTARG" >&2; exit 2 ;;
-    #      esac ;;
     \? ) exit 2 ;;  # getopts already reported the illegal option
   esac
 done
@@ -284,6 +266,11 @@ if [ -z "$DESTINATION_DIR" ]; then
     exit 2
 fi
 
+if [ -d "$DESTINATION_DIR" ]; then
+    echo "Destination directory does not exist" >&2
+    exit 2
+fi
+
 debug_message "VAR Prefix: $ARCHIVE_PREFIX"
 debug_message "VAR Force: $FORCE"
 #debug_message "VAR Pass: $PASSWORD"
@@ -298,26 +285,16 @@ if [ "${SUBFOLDERS}" = true ]; then
 
     PREFIX=$(basename "${SOURCE_DIR}")
 
-    # findBin=$(command -v find)
-    # cmd="${findBin} "${SOURCE_DIR}" -maxdepth 1 -mindepth 1 -type d"
-    # cmdOutput=$(${findBin} "${DIR}" -maxdepth 1 -mindepth 1 -type d -exec basename {} \;)
-    # echo $cmdOutput
     for dir in ${SOURCE_DIR}/*
     do
         if [[ -d "$dir" ]]; then
             dir=${dir%*/}    # strip trailing slash
-            dir=${dir##*/}  # strip path and leading slash
+            dir=${dir##*/}   # strip path and leading slash
             TMP_SOURCE_DIR="${SOURCE_DIR}/${dir}"
 
             archive_folder "${TMP_SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${PREFIX}-${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${TRIAL_RUN}"
-        fi;
+        fi
     done
-
-    # $($cmd) | while read d; do
-    #     echo "$d"
-    # done
 else
-
     archive_folder "${SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${TRIAL_RUN}"
-
 fi
