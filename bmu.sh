@@ -266,7 +266,7 @@ if [ -z "$DESTINATION_DIR" ]; then
     exit 2
 fi
 
-if [ -d "$DESTINATION_DIR" ]; then
+if [ ! -d "$DESTINATION_DIR" ]; then
     echo "Destination directory does not exist" >&2
     exit 2
 fi
