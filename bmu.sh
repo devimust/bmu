@@ -10,15 +10,6 @@
 # exit status of last command returning non-zero exit code
 set -o pipefail
 
-# Set magic variables for current file & dir
-# @link http://kvz.io/blog/2013/11/21/bash-best-practices/
-__dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-__file="${__dir}/$(basename "${BASH_SOURCE[0]}")"
-__base="$(basename ${__file} .sh)"
-__root="$(cd "$(dirname "${__dir}")" && pwd)" # <-- change this as it depends on your app
-
-arg1="${1:-}"
-
 ##################################
 # Setup default global variables
 ##################################
@@ -36,12 +27,6 @@ TRIAL_RUN=false
 ##################################
 
 show_help(){
-    if [ ! -z "$1" ]; then
-        echo
-        echo $1
-        echo
-    fi
-
     cat <<EOF
 Usage: bmu [OPTION...] [SOURCE DIRECTORY] [DESTINATION DIRECTORY]...
 'bmu' archives files and/or folders based on changes found in the target
@@ -96,48 +81,74 @@ calc_nice_duration(){
     local M=$((T/60%60))
     local S=$((T%60))
 
-    (( $D > 0 )) && printf '%d days ' $D
-    (( $H > 0 )) && printf '%d hours ' $H
-    (( $M > 0 )) && printf '%d minutes ' $M
-    (( $D > 0 || $H > 0 || $M > 0 )) && printf 'and '
+    (( D > 0 )) && printf '%d days ' $D
+    (( H > 0 )) && printf '%d hours ' $H
+    (( M > 0 )) && printf '%d minutes ' $M
+    (( D > 0 || H > 0 || M > 0 )) && printf 'and '
 
     printf '%d seconds\n' $S
 }
 
 calc_hash(){
-    local STR=$1
-    local shaBin=$(command -v sha256sum)
-    local cmdOutput=$(echo "${STR}" | ${shaBin})
+    local STR
+    local shaBin
+    local cmdOutput
 
-    echo $cmdOutput
+    STR=$1
+    shaBin=$(command -v sha256sum)
+    cmdOutput=$(echo "${STR}" | ${shaBin})
+
+    echo "$cmdOutput"
 }
 
 calc_dir_checksum(){
-    local DIR=$1
-    local findBin=$(command -v find)
-    local shaBin=$(command -v sha256sum)
-    local cmdOutput=$(${findBin} "${DIR}" -type f -exec ${shaBin} "{}" + | sort | ${shaBin})
+    local DIR
+    local findBin
+    local shaBin
+    local cmdOutput
 
-    echo $cmdOutput
+    DIR=$1
+    findBin=$(command -v find)
+    shaBin=$(command -v sha256sum)
+    cmdOutput=$(${findBin} "${DIR}" -type f -exec "${shaBin}" "{}" + | sort | "${shaBin}")
+
+    echo "$cmdOutput"
 }
 
 archive_folder(){
-    local SOURCE_DIR=$1
-    local DESTINATION_DIR=$2
-    local ARCHIVE_TYPE=$3
-    local ARCHIVE_PREFIX=$4
-    local FORCE=$5
-    local PASSWORD=$6
-    local TRIAL_RUN=$7
+    local SOURCE_DIR
+    local DESTINATION_DIR
+    local ARCHIVE_TYPE
+    local ARCHIVE_PREFIX
+    local FORCE
+    local PASSWORD
+    local TRIAL_RUN
 
-    local CAN_ARCHIVE=false
-    local SOURCE_CHECKSUM=""
-    local SOURCE_HASH=""
-    local START_TIME=`date +%s`
-    local OUTPUT_MESSAGE=""
-    local ARCHIVE_FILE_TYPE=$(archive_file_type "${ARCHIVE_TYPE}")
-    local DESTINATION_ARCHIVE_FILE="${DESTINATION_DIR}/${ARCHIVE_PREFIX}$(basename "$SOURCE_DIR").${ARCHIVE_TYPE}"
-    local DESTINATION_CHECKSUM_FILE="${DESTINATION_ARCHIVE_FILE}.crc"
+    local CAN_ARCHIVE
+    local SOURCE_CHECKSUM
+    local SOURCE_HASH
+    local START_TIME
+    local OUTPUT_MESSAGE
+    local ARCHIVE_FILE_TYPE
+    local DESTINATION_ARCHIVE_FILE
+    local DESTINATION_CHECKSUM_FILE
+
+    SOURCE_DIR=$1
+    DESTINATION_DIR=$2
+    ARCHIVE_TYPE=$3
+    ARCHIVE_PREFIX=$4
+    FORCE=$5
+    PASSWORD=$6
+    TRIAL_RUN=$7
+
+    CAN_ARCHIVE=false
+    SOURCE_CHECKSUM=""
+    SOURCE_HASH=""
+    START_TIME=$(date +%s)
+    OUTPUT_MESSAGE=""
+    ARCHIVE_FILE_TYPE=$(archive_file_type "${ARCHIVE_TYPE}")
+    DESTINATION_ARCHIVE_FILE="${DESTINATION_DIR}/${ARCHIVE_PREFIX}$(basename "$SOURCE_DIR").${ARCHIVE_TYPE}"
+    DESTINATION_CHECKSUM_FILE="${DESTINATION_ARCHIVE_FILE}.crc"
 
     debug_message "trying to archive ${SOURCE_DIR} to ${DESTINATION_DIR}"
 
@@ -184,8 +195,8 @@ archive_folder(){
     fi
 
     if [ "${TRIAL_RUN}" = true ]; then
-        END_TIME=`date +%s`
-        TOTAL_TIME="$(($END_TIME-$START_TIME))"
+        END_TIME=$(date +%s)
+        TOTAL_TIME=$((END_TIME - START_TIME))
         NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
 
         debug_message "trial run, nothing written (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
@@ -197,17 +208,17 @@ archive_folder(){
                     debug_message "zip archive started (${DESTINATION_ARCHIVE_FILE})"
                     zipBin=$(command -v zip)
 
-                    cmd="${zipBin} --recurse-paths --paths -9"
-                    if [ ! -z ${PASSWORD} ]; then
-                        cmd="${cmd} --password "${PASSWORD}""
+                    cmd="${zipBin} --recurse-paths --paths -9 -b /mnt/cache/tmp/ "
+                    if [ ! -z "${PASSWORD}" ]; then
+                        cmd="${cmd} --password ${PASSWORD}"
                     fi
                     cmdOutput=$(${cmd} "${DESTINATION_ARCHIVE_FILE}" "${SOURCE_DIR}")
 
                     # store hash value in checksum file
                     echo "${SOURCE_HASH}" > "${DESTINATION_CHECKSUM_FILE}"
 
-                    END_TIME=`date +%s`
-                    TOTAL_TIME="$(($END_TIME-$START_TIME))"
+                    END_TIME=$(date +%s)
+                    TOTAL_TIME=$((END_TIME - START_TIME))
                     NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
 
                     debug_message "zip archive (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
@@ -216,8 +227,8 @@ archive_folder(){
                 *) ;;
             esac
         else
-            END_TIME=`date +%s`
-            TOTAL_TIME="$(($END_TIME-$START_TIME))"
+            END_TIME=$(date +%s)
+            TOTAL_TIME=$((END_TIME - START_TIME))
             NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
 
             debug_message "skipping ${SOURCE_DIR} (finished in ${NICE_TIME})"
