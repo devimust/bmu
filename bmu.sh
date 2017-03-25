@@ -179,15 +179,6 @@ archive_folder(){
         fi
     fi
 
-    # # do we need to check for changes
-    # if [ "$FORCE" = false ] ; then
-    #     debug_message "check for changes"
-    #     FOLDER_SIZE=$(du -sb ${DESTINATION_DIR})
-    #     echo $FOLDER_SIZE
-    #     #check_source_dir $SOURCE_DIR
-    # else
-    #     debug_message "forcing archive"
-
     if [ -z "${SOURCE_CHECKSUM}" ]; then
         debug_message "calculating source folder checksum as this is a new archive or was forced"
         SOURCE_CHECKSUM=$(calc_dir_checksum "${SOURCE_DIR}")
