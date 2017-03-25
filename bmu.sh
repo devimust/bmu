@@ -301,7 +301,7 @@ if [ "${SUBFOLDERS}" = true ]; then
     tLen=${#fileArray[@]}
 
     # use for loop read all filenames
-    for (( i=0; i<${tLen}; i++ ));
+    for (( i=0; i<tLen; i++ ));
     do
         dir="${fileArray[$i]}"
 
