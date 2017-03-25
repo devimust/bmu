@@ -296,15 +296,34 @@ if [ "${SUBFOLDERS}" = true ]; then
 
     PREFIX=$(basename "${SOURCE_DIR}")
 
-    for dir in ${SOURCE_DIR}/*
-    do
-        if [[ -d "$dir" ]]; then
-            dir=${dir%*/}    # strip trailing slash
-            dir=${dir##*/}   # strip path and leading slash
-            TMP_SOURCE_DIR="${SOURCE_DIR}/${dir}"
+    # save and change IFS
+    OLDIFS=$IFS
+    IFS=$'\n'
 
-            archive_folder "${TMP_SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${PREFIX}-${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${TRIAL_RUN}"
+    # read all file name into an array
+    fileArray=($(find "${SOURCE_DIR}" -maxdepth 1 -type d))
+
+    # restore it
+    IFS=$OLDIFS
+
+    # get length of an array
+    tLen=${#fileArray[@]}
+
+    # use for loop read all filenames
+    for (( i=0; i<${tLen}; i++ ));
+    do
+        dir="${fileArray[$i]}"
+
+        if [[ "$dir" == "${SOURCE_DIR}" ]]; then
+            continue
         fi
+
+        if [[ ! -d "$dir" ]]; then
+            continue
+        fi
+
+        TMP_SOURCE_DIR="${dir}"
+        archive_folder "${TMP_SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${PREFIX}-${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${TRIAL_RUN}"
     done
 else
     archive_folder "${SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${TRIAL_RUN}"
