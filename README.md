@@ -18,6 +18,20 @@ Using bmu can be as simple as:
 
 `$ bmu /src /dst`
 
+Options:
+
+```
+-c, --cache-dir             temporary cache folder to use as archiving medium
+-d, --sub-dirs              only archive sub directories inside given source directory
+-f, --force                 force process and bypass checking for changes
+-h, --help                  show this help menu
+-n, --dry-run               dry run to see what will happen
+-p, --password PASSWORD     specify password to protect archive(s)
+-s, --string-prefix PREFIX  prefix string to the destination archive file(s)
+-t, --type TYPE             archive type to use (only zip currently available)
+-v, --verbose               verbose output (debugging purposes)
+```
+
 
 ## Examples
 
@@ -31,11 +45,11 @@ Given the following file structure:
 ```
 
 
-### 1. Prefix and Subfolders
+### 1. Prefix and Sub-folders
 
-Create or update backup if changes found in `/src` (force backup by parsing `-f` flag).
+Create or update backup sub-folders if changes found in `/src` (force backup by parsing `-f` flag).
 
-`$ bmu -a pre123- -s /src /dst`
+`$ bmu -s pre123- -d /src /dst`
 
 Should result in:
 
@@ -57,3 +71,7 @@ Should result in:
 /dst/dst.zip
 /dst/dst.zip.crc
 ```
+
+## Tests
+
+`$ ./tests/run.sh`
