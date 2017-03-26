@@ -27,7 +27,7 @@ GLOBAL_START_TIME=$(date +%s)
 ##################################
 
 show_help(){
-    THIS_NAME=`basename "$0"`
+    THIS_NAME=$(basename "$0")
 
     cat <<EOF
 Usage: ${THIS_NAME} [-cdfhnv] [-p PASSWORD] [-s PREFIX] [-t TYPE] [SOURCE DIRECTORY] [DESTINATION DIRECTORY]...
@@ -241,9 +241,12 @@ archive_folder(){
 ##################################
 
 # @link https://gist.github.com/cosimo/3760587
-OPTS=`getopt -o c:dfhnp:s:t:v --long cache-dir,sub-dirs,force,help,dry-run,password,string-prefix,type,verbose: -n 'parse-options' -- "$@"`
+OPTS=$(getopt -o c:dfhnp:s:t:v --long cache-dir,sub-dirs,force,help,dry-run,password,string-prefix,type,verbose: -n 'parse-options' -- "$@")
 
-if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
+if [ "$?" != "0" ]; then
+    echo "Failed parsing options." >&2
+    exit 1
+fi
 
 eval set -- "$OPTS"
 
@@ -273,17 +276,17 @@ DESTINATION_DIR=$2
 
 if [ -z "$SOURCE_DIR" ]; then
     echo "No source directory specified" >&2
-    exit 2
+    exit 1
 fi
 
 if [ -z "$DESTINATION_DIR" ]; then
     echo "No destination directory specified" >&2
-    exit 2
+    exit 1
 fi
 
 if [ ! -d "$DESTINATION_DIR" ]; then
     echo "Destination directory does not exist" >&2
-    exit 2
+    exit 1
 fi
 
 debug_message "VAR Prefix: $ARCHIVE_PREFIX"
