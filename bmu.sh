@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Back me up. Copyright (c) 2017, https://github.com/devimust
+# Back me up. Copyright (c) 2017, https://github.com/devimust/bmu
 
 # trace what gets executed (debugging purposes)
 #set -x
 # exit script when command fails
-#set -e
-# exit when trying to use undeclared vars
-#set -u
+set -e
 # exit status of last command returning non-zero exit code
 set -o pipefail
 
@@ -20,36 +18,37 @@ PASSWORD=""
 SUBFOLDERS=false
 VERBOSE=false
 ARCHIVE_TYPE="zip"
-TRIAL_RUN=false
+DRY_RUN=false
+TMP_FOLDER=
+GLOBAL_START_TIME=$(date +%s)
 
 ##################################
 # Local functions
 ##################################
 
 show_help(){
+    THIS_NAME=`basename "$0"`
+
     cat <<EOF
-Usage: bmu [OPTION...] [SOURCE DIRECTORY] [DESTINATION DIRECTORY]...
-'bmu' archives files and/or folders based on changes found in the target
+Usage: ${THIS_NAME} [-cdfhnv] [-p PASSWORD] [-s PREFIX] [-t TYPE] [SOURCE DIRECTORY] [DESTINATION DIRECTORY]...
+Back Me Up (bmu) archives files and/or folders based on changes found in the target
 directory.
 
 Examples:
-  bmu -p somepassword1 /src_folder /dst_folder      # Create protected archive only if source
-                                                    # files/folders were modified.
-  bmu -a my-prefix -vsf /src_folder /dst_folder     # Force new archives with prefix, verbosity
-                                                    # and only include sub-folders.
+  ${THIS_NAME} -p p4ss1 /src /dst            # Create protected archive only if source files/folders were modified.
+  ${THIS_NAME} -s my-prefix -vdf /src /dst   # Force new archives with prefix, verbosity and only include sub-dirs.
 
- Main operation mode:
+  Main operation mode:
+    -c, --cache-dir             temporary cache folder to use as archiving medium
+    -d, --sub-dirs              only archive sub directories inside given source directory
+    -f, --force                 force process and bypass checking for changes
+    -h, --help                  show this help menu
+    -n, --dry-run               dry run to see what will happen
+    -p, --password PASSWORD     specify password to protect archive(s)
+    -s, --string-prefix PREFIX  prefix string to the destination archive file(s)
+    -t, --type TYPE             archive type to use (only zip currently available)
+    -v, --verbose               verbose output (debugging purposes)
 
-  -a            attach prefix to the archived files
-  -c            check what will be processed in a test run if omitted
-  -f            force process and bypass checking for changes
-  -h            show this help menu
-  -p            specify password to protect archive(s)
-  -s            only archive subfolders inside given directory
-  -d            show more verbose output (debugging)
-  -t            archive type to use (zip or tar)
-
-  long options not currently supported
 EOF
 }
 
@@ -122,7 +121,8 @@ archive_folder(){
     local ARCHIVE_PREFIX
     local FORCE
     local PASSWORD
-    local TRIAL_RUN
+    local DRY_RUN
+    local TMP_DIR
 
     local CAN_ARCHIVE
     local SOURCE_CHECKSUM
@@ -139,7 +139,8 @@ archive_folder(){
     ARCHIVE_PREFIX=$4
     FORCE=$5
     PASSWORD=$6
-    TRIAL_RUN=$7
+    DRY_RUN=$7
+    TMP_DIR=$8
 
     CAN_ARCHIVE=false
     SOURCE_CHECKSUM=""
@@ -185,7 +186,7 @@ archive_folder(){
         SOURCE_HASH=$(calc_hash "${SOURCE_CHECKSUM}")
     fi
 
-    if [ "${TRIAL_RUN}" = true ]; then
+    if [ "${DRY_RUN}" = true ]; then
         END_TIME=$(date +%s)
         TOTAL_TIME=$((END_TIME - START_TIME))
         NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
@@ -199,7 +200,12 @@ archive_folder(){
                     debug_message "zip archive started (${DESTINATION_ARCHIVE_FILE})"
                     zipBin=$(command -v zip)
 
-                    cmd="${zipBin} --recurse-paths --paths -9 -b /mnt/cache/tmp/ "
+                    TMP_ZIP_OPTION=""
+                    if [ ! -z "${TMP_DIR}" ]; then
+                        TMP_ZIP_OPTION="-b ${TMP_DIR}"
+                    fi
+
+                    cmd="${zipBin} --recurse-paths --paths -9 ${TMP_ZIP_OPTION} "
                     if [ ! -z "${PASSWORD}" ]; then
                         cmd="${cmd} --password ${PASSWORD}"
                     fi
@@ -234,21 +240,28 @@ archive_folder(){
 # Main execution
 ##################################
 
-# @link http://stackoverflow.com/questions/402377/using-getopts-in-bash-shell-script-to-get-long-and-short-command-line-options/7680682
-while getopts a:cdfhp:st:-: arg; do
-  case $arg in
-    a ) ARCHIVE_PREFIX="$OPTARG" ;;
-    c ) TRIAL_RUN=true ;;
-    d ) VERBOSE=true ;;
-    f ) FORCE=true ;;
-    h ) show_help && exit 0 ;;
-    p ) PASSWORD="$OPTARG" ;;
-    s ) SUBFOLDERS=true ;;
-    t ) ARCHIVE_TYPE="$OPTARG" ;;
-    \? ) exit 2 ;;  # getopts already reported the illegal option
+# @link https://gist.github.com/cosimo/3760587
+OPTS=`getopt -o c:dfhnp:s:t:v --long cache-dir,sub-dirs,force,help,dry-run,password,string-prefix,type,verbose: -n 'parse-options' -- "$@"`
+
+if [ $? != 0 ] ; then echo "Failed parsing options." >&2 ; exit 1 ; fi
+
+eval set -- "$OPTS"
+
+while true; do
+  case "$1" in
+    -c | --cache-dir )     TMP_FOLDER="$2"; shift; shift ;;
+    -d | --sub-dirs )      SUBFOLDERS=true; shift ;;
+    -f | --force )         FORCE=true; shift ;;
+    -h | --help )          show_help && exit 0; shift ;;
+    -n | --dry-run )       DRY_RUN=true; shift ;;
+    -p | --password )      PASSWORD="$2"; shift; shift ;;
+    -s | --string-prefix ) ARCHIVE_PREFIX="$2"; shift; shift ;;
+    -t | --type )          ARCHIVE_TYPE="$2"; shift; shift ;;
+    -v | --verbose )       VERBOSE=true; shift ;;
+    -- ) shift; break ;;
+    * ) break ;;
   esac
 done
-shift $((OPTIND-1)) # remove parsed options and args from $@ list
 
 if [ "$#" -eq 0 ]; then
     show_help
@@ -276,11 +289,12 @@ fi
 debug_message "VAR Prefix: $ARCHIVE_PREFIX"
 debug_message "VAR Force: $FORCE"
 #debug_message "VAR Pass: $PASSWORD"
-debug_message "VAR Subfolders: $SUBFOLDERS"
+debug_message "VAR Sub Directories: $SUBFOLDERS"
 debug_message "VAR Type: $ARCHIVE_TYPE"
-debug_message "VAR Trial Run: $TRIAL_RUN"
+debug_message "VAR Dry Run: $DRY_RUN"
 debug_message "VAR Source: $SOURCE_DIR"
 debug_message "VAR Destination: $DESTINATION_DIR"
+debug_message "VAR Temp Directory: $TMP_FOLDER"
 
 if [ "${SUBFOLDERS}" = true ]; then
     debug_message "checking subfolders on ${SOURCE_DIR}"
@@ -314,8 +328,14 @@ if [ "${SUBFOLDERS}" = true ]; then
         fi
 
         TMP_SOURCE_DIR="${dir}"
-        archive_folder "${TMP_SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${PREFIX}-${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${TRIAL_RUN}"
+        archive_folder "${TMP_SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${PREFIX}-${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${DRY_RUN}" "${TMP_FOLDER}"
     done
 else
-    archive_folder "${SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${TRIAL_RUN}"
+    archive_folder "${SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${DRY_RUN}" "${TMP_FOLDER}"
 fi
+
+GLOBAL_END_TIME=$(date +%s)
+GLOBAL_TOTAL_TIME=$((GLOBAL_END_TIME - GLOBAL_START_TIME))
+GLOBAL_NICE_TIME=$(calc_nice_duration "$GLOBAL_TOTAL_TIME")
+
+output_message "total execution time ${GLOBAL_NICE_TIME}"
