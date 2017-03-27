@@ -8,6 +8,14 @@ set -e
 # exit status of last command returning non-zero exit code
 set -o pipefail
 
+print_header(){
+    echo
+    echo "******************************************"
+    echo "* $1"
+    echo "******************************************"
+    echo
+}
+
 reset_dst_dir(){
     OUTPUT=$(rm -Rf ./tests/testfiles/dst)
     OUTPUT=$(mkdir -p ./tests/testfiles/dst)
@@ -16,6 +24,12 @@ reset_dst_dir(){
 reset_srcdst_dir(){
     OUTPUT=$(rm -Rf ./tests/testfiles/src ./tests/testfiles/dst)
     OUTPUT=$(mkdir -p ./tests/testfiles/src ./tests/testfiles/dst)
+    OUTPUT=$(tar -xzf ./tests/testfiles/testfiles.tar.gz -C ./tests/testfiles/src)
+    OUTPUT=$(find ./tests/testfiles/src/. | wc -l)
+    if [ ! $OUTPUT -eq "63" ]; then
+        echo "something went wrong with the source test data" 1>&2
+        exit 1
+    fi
 }
 
 delete_srcdst_dir(){
@@ -33,24 +47,17 @@ if [[ ! -f "./bmu.sh" ]]; then
     exit 1
 fi
 
-echo "setting up source data"
+print_header "setup"
 
-# clean src/dst dirs
+echo "testing source data"
+
 reset_srcdst_dir
-
-# setup folders
-OUTPUT=$(tar -xzf ./tests/testfiles/testfiles.tar.gz -C ./tests/testfiles/src)
-
-OUTPUT=$(find ./tests/testfiles/src/. | wc -l)
-if [ ! $OUTPUT -eq "63" ]; then
-    echo "something went wrong with the source data" 1>&2
-    exit 1
-fi
 
 echo "starting tests"
 
 . ./tests/test-default-options.sh
+. ./tests/test-subdirs.sh
 
 delete_srcdst_dir
 
-echo "all tests passed"
+print_header "all tests passed"

@@ -61,7 +61,11 @@ debug_message(){
 
 output_message(){
     if [ ${VERBOSE} = false ]; then
-        echo "$1"
+        if [ "$2" = true ]; then
+            echo -n "$1"
+        else
+            echo "$1"
+        fi
     fi
 }
 
@@ -109,7 +113,12 @@ calc_dir_checksum(){
     DIR=$1
     findBin=$(command -v find)
     shaBin=$(command -v sha256sum)
-    cmdOutput=$(${findBin} "${DIR}" -type f -exec "${shaBin}" "{}" + | sort | "${shaBin}")
+    statBin=$(command -v stat)
+
+    # check for file changes based file modification time
+    cmdOutput=$(${findBin} "${DIR}" -exec "${statBin}" -c '%y %n' {} + | "${shaBin}")
+    # better to check for changes (hash of file contents), but verrrry slow
+    #cmdOutput=$(${findBin} "${DIR}" -type f -exec "${shaBin}" "{}" + | sort | "${shaBin}")
 
     echo "$cmdOutput"
 }
@@ -128,7 +137,6 @@ archive_folder(){
     local SOURCE_CHECKSUM
     local SOURCE_HASH
     local START_TIME
-    local OUTPUT_MESSAGE
     local ARCHIVE_FILE_TYPE
     local DESTINATION_ARCHIVE_FILE
     local DESTINATION_CHECKSUM_FILE
@@ -146,7 +154,6 @@ archive_folder(){
     SOURCE_CHECKSUM=""
     SOURCE_HASH=""
     START_TIME=$(date +%s)
-    OUTPUT_MESSAGE=""
     ARCHIVE_FILE_TYPE=$(archive_file_type "${ARCHIVE_TYPE}")
     DESTINATION_ARCHIVE_FILE="${DESTINATION_DIR}/${ARCHIVE_PREFIX}$(basename "$SOURCE_DIR").${ARCHIVE_TYPE}"
     DESTINATION_CHECKSUM_FILE="${DESTINATION_ARCHIVE_FILE}.crc"
@@ -155,7 +162,7 @@ archive_folder(){
 
     if [ ! -e "${DESTINATION_CHECKSUM_FILE}" ]; then
         debug_message "no checksum file found (${DESTINATION_CHECKSUM_FILE})"
-        OUTPUT_MESSAGE="creating new archive on ${SOURCE_DIR}"
+        output_message "creating new archive on ${SOURCE_DIR}" true
         CAN_ARCHIVE=true
     else
         if [ "${FORCE}" = false ]; then
@@ -167,15 +174,15 @@ archive_folder(){
 
             if [ "${DESTINATION_HASH}" != "${SOURCE_HASH}" ]; then
                 debug_message "changes detected"
-                OUTPUT_MESSAGE="changes detected on ${SOURCE_DIR}"
+                output_message "changes detected on ${SOURCE_DIR}" true
                 CAN_ARCHIVE=true
             else
                 debug_message "no changes detected"
-                OUTPUT_MESSAGE="no changes detected on ${SOURCE_DIR}"
+                output_message "no changes detected on ${SOURCE_DIR}" true
             fi
         else
             debug_message "forcing archive"
-            OUTPUT_MESSAGE="forcing archive on ${SOURCE_DIR}"
+            output_message "forcing archive on ${SOURCE_DIR}" true
             CAN_ARCHIVE=true
         fi
     fi
@@ -192,7 +199,7 @@ archive_folder(){
         NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
 
         debug_message "trial run, nothing written (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
-        OUTPUT_MESSAGE="${OUTPUT_MESSAGE}... trial run, nothing written (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
+        output_message " ... trial run, nothing written (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
     else
         if [ "${CAN_ARCHIVE}" = true ]; then
             case "$ARCHIVE_FILE_TYPE" in
@@ -219,7 +226,7 @@ archive_folder(){
                     NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
 
                     debug_message "zip archive (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
-                    OUTPUT_MESSAGE="${OUTPUT_MESSAGE}... (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
+                    output_message " ... (finished in ${NICE_TIME}) (${DESTINATION_ARCHIVE_FILE})"
                     ;;
                 *) ;;
             esac
@@ -229,11 +236,9 @@ archive_folder(){
             NICE_TIME=$(calc_nice_duration "$TOTAL_TIME")
 
             debug_message "skipping ${SOURCE_DIR} (finished in ${NICE_TIME})"
-            OUTPUT_MESSAGE="${OUTPUT_MESSAGE}... (finished in ${NICE_TIME})"
+            output_message " ... (finished in ${NICE_TIME})"
         fi
     fi
-
-    output_message "${OUTPUT_MESSAGE}"
 }
 
 ##################################
@@ -309,7 +314,7 @@ if [ "${SUBFOLDERS}" = true ]; then
     IFS=$'\n'
 
     # read all file name into an array
-    fileArray=($(find "${SOURCE_DIR}" -maxdepth 1 -type d))
+    fileArray=($(find "${SOURCE_DIR}" -maxdepth 1 -type d | sort))
 
     # restore it
     IFS=$OLDIFS
@@ -322,16 +327,12 @@ if [ "${SUBFOLDERS}" = true ]; then
     do
         dir="${fileArray[$i]}"
 
-        if [[ "$dir" == "${SOURCE_DIR}" ]]; then
-            continue
+        if [ -d "$dir" ]; then
+            if [ "$dir" != "${SOURCE_DIR}" ]; then
+                TMP_SOURCE_DIR="${dir}"
+                archive_folder "${TMP_SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${PREFIX}-${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${DRY_RUN}" "${TMP_FOLDER}"
+            fi
         fi
-
-        if [[ ! -d "$dir" ]]; then
-            continue
-        fi
-
-        TMP_SOURCE_DIR="${dir}"
-        archive_folder "${TMP_SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${PREFIX}-${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${DRY_RUN}" "${TMP_FOLDER}"
     done
 else
     archive_folder "${SOURCE_DIR}" "${DESTINATION_DIR}" "${ARCHIVE_TYPE}" "${ARCHIVE_PREFIX}" "${FORCE}" "${PASSWORD}" "${DRY_RUN}" "${TMP_FOLDER}"
